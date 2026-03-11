@@ -1,0 +1,260 @@
+---
+title: "Exploratory Data Analysis: Factors Influencing IMDb Movie Quality"
+author: "Group 10"
+date: last-modified
+number-sections: true
+format: 
+  html:
+    embed-resources: true
+editor_options:
+  chunk_output_type: console
+---
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+
+# the lines above ensure that the R code in this block (along with any warning messages) will not be shown
+# Load necessary libraries
+library(dplyr)
+library(ggplot2)
+library(tidyr)
+library(corrplot)
+library(gridExtra)
+library(readr)
+library(knitr)
+
+# Define a harmonized color palette for consistency
+# Orange represents 'Poor' (lower quality), Blue represents 'Good' (higher quality)
+my_colors <- c("Poor (<=7)" = "#E69F00", "Good (>7)" = "#1b9e77")
+```
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+# Load and Clean Data
+## read data
+setwd("~/Documents/GitHub/DAS-Group-10/") # better use by different person 
+##important: you need change it to your own path where your csv in 
+##right-click your folder, ctrl+shift+C or "copy file path"
+##remember to change "\" to "/"
+
+df <- read_csv("dataset10.csv")
+
+```
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+# Remove 'film_id' as it is a unique identifier with no predictive power
+df <- df %>% select(-film_id)
+
+# Check for missing values (NAs)
+#print("Count of missing values per column:")
+#print(colSums(is.na(df)))
+
+# Drop rows with any missing values
+df_clean <- df %>% drop_na()
+
+# Create binary target: 1 if rating > 7 (High), 0 otherwise (Low)
+df_clean <- df_clean %>%
+  mutate(
+    is_high_rating = ifelse(rating > 7, 1, 0),
+    is_high_rating_factor = factor(is_high_rating, levels = c(0, 1), labels = c("Poor (<=7)", "Good (>7)")),
+    genre = as.factor(genre) # Ensure genre is a categorical factor
+  )
+
+```
+
+# Introduction {#sec-Intro}
+
+The following analysis explores the internal characteristics of the movie dataset to identify potential predictors for our Generalized Linear Model (GLM). We specifically focus on whether a movie achieves an IMDb rating greater than 7.
+
+# Exploratory Analysis {#sec-EA}
+
+## Data Summary & Descriptive Statistics
+
+To understand the central tendency and dispersion of our movie features, we generated a summary table for numerical variables. As presented in @tbl-summary, the dataset covers a wide range of years and budgets.
+
+```{r}
+#| echo: false
+#| label: tbl-summary
+#| tbl-cap: Descriptive Statistics for Numerical Movie Features 
+
+# Create a summary table
+summary_stats <- df_clean %>%
+  select(year, length, budget, votes, rating) %>%
+  summarise(across(everything(), list(
+    Mean = ~mean(.x, na.rm = TRUE),
+    SD = ~sd(.x, na.rm = TRUE),
+    Min = ~min(.x, na.rm = TRUE),
+    Max = ~max(.x, na.rm = TRUE)
+  ))) %>%
+  pivot_longer(everything(), names_to = c("Variable", "Statistic"), names_sep = "_") %>%
+  pivot_wider(names_from = Statistic, values_from = value)
+
+# Render table using kable
+kable(summary_stats, digits = 2)
+```
+
+The diversity of movie genres is another key aspect of our dataset. @tbl-genre shows the count and percentage of movies within each genre category after cleaning the missing values.
+
+```{r}
+#| echo: false
+#| label: tbl-genre
+#| tbl-cap: Frequency and Percentage Distribution of Movie Genres
+
+# Create a frequency table for Genre
+genre_table <- df_clean %>%
+  group_by(genre) %>%
+  summarise(Count = n()) %>%
+  mutate(Percentage = paste0(round(Count / sum(Count) * 100, 1), "%")) %>%
+  arrange(desc(Count))
+
+# Render table
+kable(genre_table)
+```
+
+By reviewing @tbl-summary, the variance of `votes` is exceptionally high compared to other predictors. This extreme dispersion indicates a "long-tail" distribution where a few extremely popular films receive a disproportionate amount of audience engagement, illustrating the need for a further transformation to stabilize the variable for the GLM. Furthermore, @tbl-genre highlights that Drama and Action are the most two prevalent categories in our sample. In contrast, Romance represents the smallest segment of the sample. This distribution reflects the producer's focus on mainstream genres but suggests that the model's predictive power for specific genres like Romance may be more limited.
+
+## Class Distribution
+
+We examine the balance of our target variable (movie quality). As shown in @fig-dist, we can observe the frequency of movies categorized as "Good" versus "Poor".
+
+```{r}
+#| echo: false
+#| label: fig-dist
+#| fig-cap: Distribution of Movie Quality Classes based on IMDb Ratings
+ggplot(df_clean, aes(x = is_high_rating_factor, fill = is_high_rating_factor)) +
+  geom_bar() +
+  scale_fill_manual(values = my_colors) +
+  labs(x = "Rating Category", y = "Frequency", fill = "Category") +
+  theme_minimal()
+```
+
+Based on @fig-dist, a significant class imbalance is observed in the target variable, with 'Poor' films ($Rating < 7$) outnumbering 'Good' films ($Rating > 7$) by nearly a factor of two. Because the model sees more examples of 'Poor' films, it might become better at identifying failures than predicting successes.
+
+## Numerical Variables vs Target
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+#| label: fig-box
+#| fig-cap: Boxplots of Movie Length, Budget, and Votes by Quality Category
+#| fig-align: center
+#| fig-width: 10
+#| fig-height: 8
+
+# Analyzing Length, Budget, Votes, and Year using Boxplots
+# A. Length: Highlighting the standardized 'Poor' movies vs. flexible 'Good' movies
+p_length <- ggplot(df_clean, aes(x = is_high_rating_factor, y = length, fill = is_high_rating_factor)) +
+  geom_boxplot(alpha = 0.8, outlier.color = "red") + 
+  scale_fill_manual(values = my_colors) +
+  labs(title = "Movie Length vs Quality", x = "", y = "Duration (Min)") + 
+  theme_minimal() + theme(legend.position = "none")
+
+# B. Log(Votes): Addressing extreme right-skewness in both categories
+p_votes <- ggplot(df_clean, aes(x = is_high_rating_factor, y = votes, fill = is_high_rating_factor)) +
+  geom_boxplot(alpha = 0.8, outlier.color = "red") + 
+  scale_fill_manual(values = my_colors) +
+  labs(title = "Log(Votes) vs Quality", x = "", y = "Log(Votes + 1)") + 
+  theme_minimal() + theme(legend.position = "none")
+
+# C. Year & D. Budget: Demonstrating weak correlation with quality
+p_year <- ggplot(df_clean, aes(x = is_high_rating_factor, y = year, fill = is_high_rating_factor)) +
+  geom_boxplot(alpha = 0.8) + scale_fill_manual(values = my_colors) +
+  labs(title = "Year vs Quality", x = "") + theme_minimal() + theme(legend.position = "none")
+
+p_budget <- ggplot(df_clean, aes(x = is_high_rating_factor, y = budget, fill = is_high_rating_factor)) +
+  geom_boxplot(alpha = 0.8) + scale_fill_manual(values = my_colors) +
+  labs(title = "Budget vs Quality", x = "") + theme_minimal() + theme(legend.position = "none")
+
+# Combine plots into a 2x2 grid
+grid.arrange(p_year, p_budget, p_length, p_votes, ncol = 2)
+
+```
+
+Analysis of the numerical predictors in @fig-box reveals that while `Year` and `Budget` show nearly identical distributions across quality classes, `Length` and `Votes` offer more significant insights. Notably, "Poor" movies exhibit a "Mediocrity Trap," with their durations tightly clustered around a standardized 100-minute mark, yet plagued by numerous extreme outliers (represented by the red markers in @fig-box). In contrast, "Good" movies—while also averaging near 100 minutes—display a much more flexible and varied distribution. Furthermore, because both the "Good" and "Poor" categories exhibit extreme right-skewness in their raw audience engagement metrics, we utilized a logarithmic transformation for the `Votes` variable. As shown in the red-highlighted outliers, this step was essential to stabilize the variance.
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+#| label: fig-violin
+#| fig-cap: "Violin Plot of Log-transformed Votes by Quality Category."
+
+# Prepare Log-transformed Data
+df_clean <- df_clean %>%
+  mutate(log_votes = log1p(votes))
+
+# Density Plot for Log-transformed Votes
+ggplot(df_clean, aes(x = is_high_rating_factor, y = log_votes, fill = is_high_rating_factor)) +
+  geom_violin(alpha = 0.4, color = "darkgrey") +
+  geom_boxplot(width = 0.1, color = "black", outlier.shape = NA) +
+  scale_fill_manual(values = my_colors) +
+  labs(title = "Log-Votes Distribution: Poor vs. Good Movies",
+       x = "Movie Quality Category", 
+       y = "Log(Votes + 1)") +
+  theme_minimal() +
+  theme(legend.position = "none")
+```
+
+Despite the log-transformation, the distribution of `votes` remains somewhat right-skewed. However, as shown in @fig-violin, the visual separation between the two quality classes becomes much more pronounced compared to the raw scale.
+
+## Categorical Analysis of Genre
+
+```{r}
+#| echo: false
+#| label: fig-genre
+#| fig-cap: Proportion of Good vs. Poor Movies across Different Genres
+
+# Proportional stacked bar chart for Movie Genre
+ggplot(df_clean, aes(x = genre, fill = is_high_rating_factor)) +
+  geom_bar(position = "fill") +
+  coord_flip() +
+  scale_fill_manual(values = my_colors)
+  labs(title = "Impact of Genre on Movie Quality",
+       x = "Genre", y = "Proportion", fill = "Quality") +
+  theme_minimal()
+```
+
+As illustrated in @fig-genre, genres such as Documentary and Short appear to have a significantly higher probability of being rated above 7.0 compared to Action or Drama films.
+
+## Multi-collinearity Check & Correlation
+
+```{r}
+#| echo: false
+#| label: fig-corr
+#| fig-cap: Full 4x4 Correlation Matrix for Numerical Predictors  
+
+# Extract numerical columns for correlation analysis
+numeric_vars <- df_clean %>% 
+  select(year, length, budget, votes, log_votes) 
+#calculate correlation
+cor_mat <- cor(numeric_vars, use = "complete.obs")
+corrplot(cor_mat, 
+         method = "color", 
+         type = "upper", 
+         addCoef.col = "black", 
+         tl.col = "black", 
+         tl.srt = 45,
+         col = colorRampPalette(c("#E69F00", "white", "#1b9e77"))(200),
+         title = "Feature Correlation Matrix",
+         mar = c(0,0,1,0))# Adjust margin to fit title
+# Final Step: Export cleaned data for the GLM modeler
+#write.csv(df_clean, "cleaned_movie_data.csv", row.names = FALSE)
+
+
+```
+
+As shown in @fig-corr, no predictors exhibit a correlation higher than 0.7, confirming that we can include all variables in the GLM.
+
+# Summary of Analysis {#sec-sum}
+
+Our exploratory analysis shows several patterns in the data. First, there is a clear class imbalance: “Poor” films appear about twice as often as “Good” films, which creates a strong baseline for prediction. We also find that budget and production year have little relationship with film ratings. However, film length shows an interesting pattern. Lower-rated films tend to cluster around 100 minutes, while higher-rated films have a wider range of lengths.
+
+In addition, the number of audience votes is highly right-skewed, so we applied a log transformation to stabilize the variance. After this transformation, higher-rated films still show consistently higher audience engagement. By combining these findings with differences across genres, we gain a clearer understanding of the factors related to movie quality and build a stronger foundation for our GLM model.
