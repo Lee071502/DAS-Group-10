@@ -157,11 +157,11 @@ p_length <- ggplot(df_clean, aes(x = is_high_rating_factor, y = length, fill = i
   labs(title = "Movie Length vs Quality", x = "", y = "Duration (Min)") + 
   theme_minimal() + theme(legend.position = "none")
 
-# B. Log(Votes): Addressing extreme right-skewness in both categories
+# B. Votes: Addressing extreme right-skewness in both categories
 p_votes <- ggplot(df_clean, aes(x = is_high_rating_factor, y = votes, fill = is_high_rating_factor)) +
   geom_boxplot(alpha = 0.8, outlier.color = "red") + 
   scale_fill_manual(values = my_colors) +
-  labs(title = "Log(Votes) vs Quality", x = "", y = "Log(Votes + 1)") + 
+  labs(title = "Votes vs Quality", x = "", y = "Votes") + 
   theme_minimal() + theme(legend.position = "none")
 
 # C. Year & D. Budget: Demonstrating weak correlation with quality
@@ -216,7 +216,7 @@ Despite the log-transformation, the distribution of `votes` remains somewhat rig
 ggplot(df_clean, aes(x = genre, fill = is_high_rating_factor)) +
   geom_bar(position = "fill") +
   coord_flip() +
-  scale_fill_manual(values = my_colors)
+  scale_fill_manual(values = my_colors)+
   labs(title = "Impact of Genre on Movie Quality",
        x = "Genre", y = "Proportion", fill = "Quality") +
   theme_minimal()
