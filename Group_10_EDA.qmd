@@ -179,31 +179,42 @@ grid.arrange(p_year, p_budget, p_length, p_votes, ncol = 2)
 ```
 
 Analysis of the numerical predictors in @fig-box reveals that while `Year` and `Budget` show nearly identical distributions across quality classes, `Length` and `Votes` offer more significant insights. Notably, "Poor" movies exhibit a "Mediocrity Trap," with their durations tightly clustered around a standardized 100-minute mark, yet plagued by numerous extreme outliers (represented by the red markers in @fig-box). In contrast, "Good" movies—while also averaging near 100 minutes—display a much more flexible and varied distribution. Furthermore, because both the "Good" and "Poor" categories exhibit extreme right-skewness in their raw audience engagement metrics, we utilized a logarithmic transformation for the `Votes` variable. As shown in the red-highlighted outliers, this step was essential to stabilize the variance.
-
 ```{r}
 #| echo: false
 #| warning: false
 #| message: false
-#| label: fig-violin
-#| fig-cap: "Violin Plot of Log-transformed Votes by Quality Category."
+#| label: fig-votes-transformation
+#| fig-cap: "Comparison of Votes Distribution: Raw vs. Log-transformed"
+#| fig-height: 5
+#| fig-width: 12
 
 # Prepare Log-transformed Data
 df_clean <- df_clean %>%
   mutate(log_votes = log1p(votes))
 
-# Density Plot for Log-transformed Votes
-ggplot(df_clean, aes(x = is_high_rating_factor, y = log_votes, fill = is_high_rating_factor)) +
-  geom_violin(alpha = 0.4, color = "darkgrey") +
-  geom_boxplot(width = 0.1, color = "black", outlier.shape = NA) +
+# A. Raw Votes: Showing extreme right-skewness with a long tail
+p_raw <- ggplot(df_clean, aes(x = votes, fill = is_high_rating_factor)) +
+  geom_density(alpha = 0.6) +
   scale_fill_manual(values = my_colors) +
-  labs(title = "Log-Votes Distribution: Poor vs. Good Movies",
-       x = "Movie Quality Category", 
-       y = "Log(Votes + 1)") +
-  theme_minimal() +
-  theme(legend.position = "none")
+  labs(title = "Original Votes Distribution", 
+       subtitle = "Extreme right-skewness observed",
+       x = "Number of Votes", y = "Density") +
+  theme_minimal() + theme(legend.position = "top")
+
+# B. Log-transformed Votes: Showing a more normalized, stable distribution
+p_log <- ggplot(df_clean, aes(x = log_votes, fill = is_high_rating_factor)) +
+  geom_density(alpha = 0.6) +
+  scale_fill_manual(values = my_colors) +
+  labs(title = "Log-transformed Votes", 
+       subtitle = "Variance stabilized for GLM modeling",
+       x = "Log(Votes + 1)", y = "Density") +
+  theme_minimal() + theme(legend.position = "top")
+
+# Combine side-by-side
+grid.arrange(p_raw, p_log, ncol = 2)
 ```
 
-Despite the log-transformation, the distribution of `votes` remains somewhat right-skewed. However, as shown in @fig-violin, the visual separation between the two quality classes becomes much more pronounced compared to the raw scale.
+To address the extreme right-skewness inherent in audience engagement metrics, we compared the raw distribution of votes against a log-transformed version. As shown in @fig-votes-transformation, the original `votes` variable is heavily compressed near zero with an expansive long tail, which would disproportionately bias our GLM. By applying a logarithmic transformation, we successfully achieved a more bell-shaped, stable distribution (Right), ensuring that the variance is consistent across both quality categories and making the data suitable for parametric modeling.
 
 ## Categorical Analysis of Genre
 
