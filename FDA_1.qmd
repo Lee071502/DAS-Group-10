@@ -1,0 +1,205 @@
+---
+title: "Formal Data Analysis: Factors Influencing IMDb Movie Quality"
+author: "Group 10"
+date: last-modified
+number-sections: true
+format: 
+  html:
+    embed-resources: true
+editor_options:
+  chunk_output_type: console
+---
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+
+library(broom)
+library(kableExtra)
+library(dplyr)
+library(ggplot2)
+library(scales)
+library(sjPlot)
+
+library(brglm2)
+options(scipen = 999)
+```
+
+# Formal Data Analysis {#sec-fda}
+
+Based on the exploratory analysis, we now fit a formal Generalised Linear Model (GLM) to investigate which movie characteristics are associated with a higher probability of receiving an IMDb rating above 7.
+
+## Model Setup
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+
+# Prepare model data for logistic regression
+setwd('C:/Users/16405/Documents')
+df_clean <- read.csv('dataset10.csv')
+model_data <- df_clean %>%
+  mutate(
+    # change the small sample into "Other"
+    genre = forcats::fct_lump(factor(genre), prop = 0.05),
+    # log votes, prevent the high number which caused coverage question.
+    log_votes = log(votes + 1), 
+    is_high_rating = as.numeric(is_high_rating)
+)
+
+model_data$genre <- relevel(model_data$genre, ref = "Comedy")
+```
+
+The response variable for the formal analysis is `is_high_rating`, which equals 1 if a movie has a rating above 7 and 0 otherwise. Since the response is binary, a logistic regression model is appropriate.
+
+Based on the exploratory analysis, the predictors included in the model are `year`, `length`, `budget`, `log_votes`, and `genre`. The reference category for `genre` is set to Comedy, so that the coefficients of other genres can be interpreted relative to this baseline.
+
+To improve model stability, rare genre categories are grouped into an "Other" category, and vote counts are log-transformed to reduce skewness. The final dataset contains `r nrow(model_data)` observations after preprocessing.
+
+## Logistic Regression Model
+To investigate the determinants of a movie's likelihood of receiving a high rating, we employed a Logistic Regression model. Given the potential for quasi-complete separation in categorical data, we utilized the Firth’s penalized maximum likelihood estimation (via the brglmFit method) to ensure parameter stability and reduce bias.
+$$
+\ln\left( \frac{P}{1 - P} \right) = \beta_0 + \beta_1 \text{year} + \beta_2 \text{length} + \beta_3 \text{budget} + \beta_4 \text{log\_votes} + \sum_{i=1}^{n} \gamma_i \text{genre}_i
+$$
+
+Where:
+
+* **$P$**: The probability that the outcome variable `is_high_rating` equals 1 (representing a high-rated movie).
+* **$\text{log\_votes}$**: The natural logarithm of the vote count, used to normalize the distribution and reduce the impact of extreme outliers.
+* **$\text{genre}$**: A categorical predictor where rare genres have been grouped into an "Other" category to improve model stability.
+* **$\beta_i$**: The estimated coefficients for the continuous and discrete numerical predictors.
+* **$\gamma_i$**: The estimated coefficients for the specific movie genre categories.
+* **$\ln\left( \frac{P}{1 - P} \right)$**: The log-odds (logit), which represents the link between the linear predictors and the probability of the outcome.
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+
+# Fit a full logistic regression model
+glm_test <- glm(
+  is_high_rating ~ year + length + budget + log_votes + genre,
+  data = model_data,
+  family = binomial(link = "logit"),
+  method = "brglmFit" #Add some penalty to restrain extreme number.
+)
+# Display model summary
+summary(glm_test)
+```
+
+An initial model including `year` was fitted. However, as `year` was not statistically significant (p > 0.05), it was removed to improve model parsimony.
+
+So our final model would be:
+$$
+\ln\left( \frac{P}{1 - P} \right) = \beta_0 + \beta_1 \text{length} + \beta_2 \text{budget} + \beta_3 \text{log\_votes} + \sum_{i=1}^{n} \gamma_i \text{genre}_i
+$$
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+#| label: tbl-Glmsummary
+
+# Fit a full logistic regression model
+glm_full <- glm(
+  is_high_rating ~ length + budget + log_votes + genre,
+  data = model_data,
+  family = binomial(link = "logit"),
+  method = "brglmFit" #Add some penalty to restrain extreme number.
+)
+# Display model summary
+summary(glm_full)
+```
+
+@tbl-Glmsummary indicates that several predictors are significantly associated with the probability of receiving a rating above 7.
+
+Higher budgets and greater audience engagement (`log_votes`) increase the likelihood of a high rating, while longer movie duration reduces it. 
+
+Genre also plays a substantial role: compared with Comedy, Documentary films have markedly higher odds of receiving high ratings, whereas Animation and Drama are associated with lower odds.
+
+## Model Coefficients Table
+```{r}
+#| label: tbl-or-table
+#| warning: false
+#| message: false
+#| echo: false
+
+tidy(glm_full, conf.int = TRUE, exponentiate = TRUE) |>
+  mutate(across(where(is.numeric), \(x) round(x, 3))) |>
+  kbl(
+    col.names = c("Term", "OR", "SE", "z", "p", "CI low", "CI high"),
+    caption = "Logistic regression odds ratios with 95% confidence intervals"
+  ) |>
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"))
+#just check the imbalance of genre
+#table(model_data$genre, model_data$is_high_rating)
+```
+@tbl-or-table reports the estimated odds ratios, standard errors and confidence intervals for all predictors in the final logistic regression model.
+
+## Predicted Probability Plot
+```{r}
+#| label: fig-pred-plot
+#| fig-cap: prediction probability plot
+#| warning: false
+#| message: false
+#| echo: false
+
+# Create a prediction grid
+nd <- expand.grid(
+  log_votes = seq(
+    min(model_data$log_votes, na.rm = TRUE),
+    max(model_data$log_votes, na.rm = TRUE),
+    length.out = 100
+  ),
+  genre = levels(model_data$genre),
+  length = median(model_data$length, na.rm = TRUE),
+  budget = median(model_data$budget, na.rm = TRUE)
+)
+
+# Predict probabilities from the fitted model
+nd$pred <- predict(glm_full, newdata = nd, type = "response")
+
+# Plot predicted probabilities
+ggplot(nd, aes(x = log_votes, y = pred, colour = genre, fill = genre)) +
+  geom_line(linewidth = 0.9) +
+  geom_hline(yintercept = 0.5, linetype = "dashed", colour = "grey50") +
+  scale_y_continuous(labels = percent_format()) +
+  labs(
+    x = "Log(Votes)",
+    y = "Predicted probability of rating > 7",
+    colour = "Genre",
+    fill = "Genre",
+    title = "Predicted probability of high movie rating by audience engagement",
+    subtitle = "Year, length and budget held fixed at their median values"
+  ) +
+theme_minimal()
+```
+
+To visualise the fitted model, @fig-pred-plot shows the predicted probability of a movie receiving a rating above 7 across different levels of audience engagement (`log_votes`), while holding other variables fixed at their median values.
+
+Besides, we can also noticed that the probability of a high rating increases with audience engagement. The approximately parallel curves indicate that the effect of `log_votes` is consistent across genres, with differences primarily reflected in baseline probabilities.
+
+```{r}
+#| label: fig-coef-plot
+#| echo: false
+#| warning: false
+#| fig-cap: Coefficient plot with CIs
+plot_model(
+  glm_full,
+  type = "est",
+  transform = "exp",
+  show.values = TRUE,
+  value.offset = 0.25
+)
+```
+
+@fig-coef-plot presents the estimated odds ratios and confidence intervals for each predictor.
+
+The plot highlights the magnitude of effects on the odds scale. Documentary films have odds of high ratings more than 10 times that of Comedy, whereas Animation and Drama have substantially lower odds. Continuous predictors such as budget and `log_votes` increase the odds of high ratings, while movie length reduces them.
+
+## Conclusion
+
+This study identifies audience engagement, budget, and genre as key determinants of high movie ratings. Movies with higher vote counts and larger budgets are significantly more likely to receive ratings above 7, whereas longer duration is associated with reduced likelihood.
+
+Substantial differences across genres persist after controlling for other variables, highlighting the independent role of genre in shaping perceived movie quality. 
+
+Overall, the fitted logistic regression model offers a stable and interpretable framework for explaining variation in IMDb ratings.
