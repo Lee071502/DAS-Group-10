@@ -127,7 +127,7 @@ genre_table <- df_clean %>%
 kable(genre_table)
 ```
 
-By reviewing @tbl-summary, the variance of `votes` is exceptionally high compared to other predictors. This extreme dispersion indicates a "long-tail" distribution where a few extremely popular films receive a disproportionate amount of audience engagement, illustrating the need for a further transformation to stabilize the variable for the GLM. Furthermore, @tbl-genre highlights that Drama and Action are the most two prevalent categories in our sample. In contrast, Romance represents the smallest segment of the sample. This distribution reflects the producer's focus on mainstream genres but suggests that the model's predictive power for specific genres like Romance may be more limited.
+By reviewing @tbl-summary, the variance of `votes` is exceptionally high compared to other predictors. This extreme dispersion indicates a "long-tail" distribution where a few extremely popular films receive a disproportionate amount of audience engagement, illustrating the need for a further transformation to stabilize the variable for the GLM. Furthermore, @tbl-genre highlights that Drama and Action are the  two most prevalent categories in our sample. In contrast, Romance represents the smallest segment of the sample. This distribution reflects the producer's focus on mainstream genres but suggests that the model's predictive power for specific genres like Romance may be more limited.
 
 ## Class Distribution
 
@@ -428,7 +428,7 @@ theme_minimal()
 
 To visualise the fitted model, @fig-pred-plot shows the predicted probability of a movie receiving a rating above 7 across different levels of audience engagement (`log_votes`), while holding other variables fixed at their median values.
 
-Besides, we can also noticed that the probability of a high rating increases with audience engagement. The approximately parallel curves indicate that the effect of `log_votes` is consistent across genres, with differences primarily reflected in baseline probabilities.
+We also observe that the probability of a high rating increases with audience engagement. The approximately parallel curves indicate that the effect of `log_votes` is consistent across genres, with differences primarily reflected in baseline probabilities.
 
 ```{r}
 #| label: fig-coef-plot
